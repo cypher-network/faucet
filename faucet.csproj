@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net6.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <RootNamespace>Faucet</RootNamespace>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <Company>CypherNetwork</Company>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Base58Check" Version="0.2.0" />
+      <PackageReference Include="Blake3" Version="0.5.1" />
+      <PackageReference Include="Dawn.Guard" Version="1.12.0" />
+      <PackageReference Include="libsecp256k1Zkp.Net" Version="1.1.10" />
+      <PackageReference Include="MessagePack" Version="2.3.85" />
+      <PackageReference Include="Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation" Version="6.0.1" />
+      <PackageReference Include="NBitcoin" Version="5.0.83" />
+      <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+      <PackageReference Include="Radzen.Blazor" Version="3.18.0" />
+      <PackageReference Include="System.Linq.Async" Version="6.0.1" />
+    </ItemGroup>
+
+</Project>
