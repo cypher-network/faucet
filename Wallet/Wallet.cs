@@ -83,7 +83,7 @@ public class Wallet : IWallet
     public async Task<byte[]> Payout(string address)
     {
         var rng = new Random();
-        var amount = rng.Next(5);
+        var amount = rng.Next(1, 5);
         var walletTransaction = CreateTransaction((ulong)amount, 0, address);
         var result = await _dataService.SendTransaction(walletTransaction.Transaction);
         if (!result)
