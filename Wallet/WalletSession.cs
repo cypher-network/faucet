@@ -52,6 +52,7 @@ public class WalletSession : IWalletSession
     private LoginData _loginData;
     private readonly object _readOnlySafeGuardLock = new();
     private IReadOnlyList<Block> _readOnlySafeGuardBlocks;
+    private readonly Random _random = new();
     
     /// <summary>
     /// 
@@ -96,6 +97,15 @@ public class WalletSession : IWalletSession
     private static void InvokeAsync(Func<Task> workItem)
     {
         workItem.Invoke();
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <returns></returns>
+    public int GetNextAmount()
+    {
+        return _random.Next(1, 5);
     }
     
     /// <summary>

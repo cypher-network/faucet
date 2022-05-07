@@ -58,7 +58,6 @@ public class Wallet : IWallet
     private readonly DataService _dataService;
     private readonly IHostApplicationLifetime _applicationLifetime;
     private readonly ILogger<Wallet> _logger;
-
     /// <summary>
     /// 
     /// </summary>
@@ -82,8 +81,7 @@ public class Wallet : IWallet
     /// <returns></returns>
     public async Task<byte[]> Payout(string address)
     {
-        var rng = new Random();
-        var amount = rng.Next(1, 5);
+        var amount = _walletSession.GetNextAmount();
         var walletTransaction = CreateTransaction((ulong)amount, 0, address);
         var result = await _dataService.SendTransaction(walletTransaction.Transaction);
         if (!result)
