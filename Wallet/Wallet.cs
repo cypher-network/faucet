@@ -424,7 +424,7 @@ public class Wallet : IWallet
                     {
                         A = 0,
                         C = pcmOut[0],
-                        D = blinds[1],
+                        D = Array.Empty<byte>(),
                         E = stealthPayment.Metadata.EphemKey.ToBytes(),
                         N = ScanPublicKey(session.RecipientAddress)
                             .Encrypt(Message(session.Amount, 0, blinds[1], "faucet")),
