@@ -109,16 +109,13 @@ public class WalletSession : IWalletSession
     public void Notify(Transaction[] transactions)
     {
         if (KeySet is null) return;
-        lock (Locking)
+        foreach (var consumed in CacheConsumed.GetItems())
         {
-            foreach (var consumed in CacheConsumed.GetItems())
-            {
-                var transaction = transactions.FirstOrDefault(t => t.Vout.Any(c => c.C.Xor(consumed.Commit)));
-                if (transaction is null) continue;
-                CacheConsumed.Remove(consumed.Commit);
-                CacheTransactions.Remove(consumed.Commit);
-                break;
-            }
+            var transaction = transactions.FirstOrDefault(t => t.Vout.Any(c => c.C.Xor(consumed.Commit)));
+            if (transaction is null) continue;
+            CacheConsumed.Remove(consumed.Commit);
+            CacheTransactions.Remove(consumed.Commit);
+            break;
         }
     }
 
@@ -242,21 +239,14 @@ public class WalletSession : IWalletSession
             {
                 try
                 {
-                    lock (Locking)
+                    var removeUnused = Utils.GetUtcNow().AddSeconds(-30);
+                    foreach (var consumed in CacheConsumed.GetItems())
                     {
-                        var removeUnused = Utils.GetUtcNow().AddSeconds(-30);
-                        foreach (var consumed in CacheConsumed.GetItems())
+                        if (consumed.Time < removeUnused)
                         {
-                            if (consumed.Time < removeUnused)
-                            {
-                                CacheConsumed.Remove(consumed.Commit);
-                            }
+                            CacheConsumed.Remove(consumed.Commit);
                         }
                     }
-                }
-                catch (Exception e)
-                {
-                    var msg = e.Message;
                 }
                 finally
                 {
