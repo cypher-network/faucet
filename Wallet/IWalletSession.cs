@@ -10,6 +10,7 @@ namespace Faucet.Wallet;
 public interface IWalletSession
 {
     public Caching<Output> CacheTransactions { get; }
+    public Caching<Consumed> CacheConsumed { get; }
     public Output Spending { get; set; }
     public SecureString Seed { get; set; }
     public SecureString Passphrase { get; set; }
@@ -19,7 +20,6 @@ public interface IWalletSession
     public ulong Amount { get; set; }
     public ulong Change { get; set; }
     public ulong Reward { get; set; }
-    List<Consumed> Consumed { get; set; }
     void Notify(Transaction[] transactions);
     Task<Tuple<bool, string>> Login(string seed, string passphrase);
     Task<Tuple<bool, string>> InitializeWallet(Output[] outputs);

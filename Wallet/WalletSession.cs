@@ -17,16 +17,10 @@ using Utils = Faucet.Helpers.Utils;
 
 namespace Faucet.Wallet;
 
-public struct Consumed
+public record Consumed(byte[] Commit, DateTime Time)
 {
-    public readonly DateTime Time;
-    public readonly byte[] Commit;
-
-    public Consumed(byte[] commit, DateTime time)
-    {
-        Commit = commit;
-        Time = time;
-    }
+    public readonly DateTime Time = Time;
+    public readonly byte[] Commit = Commit;
 }
 
 public class WalletSession : IWalletSession
@@ -34,6 +28,7 @@ public class WalletSession : IWalletSession
     private const string HardwarePath = "m/44'/847177'/0'/0/";
     
     public Caching<Output> CacheTransactions { get; } = new();
+    public Caching<Consumed> CacheConsumed { get; } = new();
     public Output Spending { get; set; }
     public SecureString Seed { get; set; }
     public SecureString Passphrase { get; set; }
@@ -43,8 +38,7 @@ public class WalletSession : IWalletSession
     public ulong Amount { get; set; }
     public ulong Change { get; set; }
     public ulong Reward { get; set; }
-    public List<Consumed> Consumed { get; set; } = new();
-    
+
     private static readonly object Locking = new();
     private readonly IHostApplicationLifetime _applicationLifetime;
     private readonly DataService _dataService;
@@ -117,11 +111,11 @@ public class WalletSession : IWalletSession
         if (KeySet is null) return;
         lock (Locking)
         {
-            foreach (var (consumed, index) in Consumed.WithIndex())
+            foreach (var consumed in CacheConsumed.GetItems())
             {
                 var transaction = transactions.FirstOrDefault(t => t.Vout.Any(c => c.C.Xor(consumed.Commit)));
                 if (transaction is null) continue;
-                Consumed.RemoveAt(index);
+                CacheConsumed.Remove(consumed.Commit);
                 CacheTransactions.Remove(consumed.Commit);
                 break;
             }
@@ -251,11 +245,11 @@ public class WalletSession : IWalletSession
                     lock (Locking)
                     {
                         var removeUnused = Utils.GetUtcNow().AddSeconds(-30);
-                        foreach (var (consumed, index) in Consumed.WithIndex())
+                        foreach (var consumed in CacheConsumed.GetItems())
                         {
                             if (consumed.Time < removeUnused)
                             {
-                                Consumed.RemoveAt(index);
+                                CacheConsumed.Remove(consumed.Commit);
                             }
                         }
                     }

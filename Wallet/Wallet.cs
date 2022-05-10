@@ -271,7 +271,7 @@ public class Wallet : IWallet
         {
             var (_, scan) = Unlock();
             var outputs = _walletSession.CacheTransactions.GetItems()
-                .Where(x => !_walletSession.Consumed.Any(c => x.C.HexToByte().Xor(c.Commit))).ToArray();
+                .Where(x => !_walletSession.CacheConsumed.GetItems().Any(c => x.C.HexToByte().Xor(c.Commit))).ToArray();
             if (!outputs.Any()) return Enumerable.Empty<Balance>().ToArray();
             balances.AddRange(from vout in outputs.ToArray()
                 let coinType = (CoinType)vout.T
@@ -324,7 +324,8 @@ public class Wallet : IWallet
                     sk[0] = oneTimeSpendKey.ToHex().HexToByte();
                     blinds[0] = message.Blind;
                     pcmIn[i + k * nCols] = pedersen.Commit(message.Amount, message.Blind);
-                    session.Consumed.Add(new Consumed(pcmIn[i + k * nCols], DateTime.UtcNow));
+                    session.CacheConsumed.Add(pcmIn[i + k * nCols],
+                        new Consumed(pcmIn[i + k * nCols], DateTime.UtcNow));
                     pkIn[i + k * nCols] = oneTimeSpendKey.PubKey.ToBytes();
                     fixed (byte* mm = m, pk = pkIn[i + k * nCols])
                     {
