@@ -1,6 +1,7 @@
 // CypherNetwork by Matthew Hellyer is licensed under CC BY-NC-ND 4.0.
 // To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-nd/4.0
 
+using Faucet.Helpers;
 using Faucet.Models;
 using MessagePack;
 using Newtonsoft.Json.Linq;
@@ -19,8 +20,8 @@ public class DataService
     private readonly IHostApplicationLifetime _applicationLifetime;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly string _url;
-    
-    private ulong _blockHeight;
+
+    public ulong BlockHeight { get; private set; }
     
     private const int Take = 15;
     private const long Coin = 1000_000_000;
@@ -55,6 +56,25 @@ public class DataService
         {
             return _transactionViews.TakeLast(Take).ToArray();
         }
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="txId"></param>
+    /// <returns></returns>
+    public async Task<bool> ConfirmTransaction(byte[] txId)
+    {
+        var httpClient = _httpClientFactory.CreateClient();
+        var url = $"{_url}/chain/transaction/{txId.ByteToHex()}";
+        using var httpResponseMessage = await httpClient.SendAsync(new HttpRequestMessage(HttpMethod.Get, new Uri(url)));
+        using var stream = httpResponseMessage.Content.ReadAsStringAsync();
+        var read = await stream;
+        var jObject = JObject.Parse(read);
+        var jToken = jObject.GetValue("transaction");
+        if (!httpResponseMessage.IsSuccessStatusCode) return false;
+        var transaction = jToken?.ToObject<Transaction>();
+        return transaction is not null && transaction.TxnId.Xor(txId);
     }
 
     /// <summary>
@@ -131,7 +151,7 @@ public class DataService
     /// 
     /// </summary>
     /// <returns></returns>
-    private async Task<ulong> Count()
+    public async Task<ulong> BlockCount()
     {
         var httpClient = _httpClientFactory.CreateClient();
         using var httpResponseMessage = await httpClient.SendAsync(new HttpRequestMessage(HttpMethod.Get,
@@ -147,9 +167,9 @@ public class DataService
     /// </summary>
     private async Task LatestTopBlocks()
     {
-        var height = await Count();
-        if (_blockHeight == height) return;
-        _blockHeight = height;
+        var height = await BlockCount();
+        if (BlockHeight == height) return;
+        BlockHeight = height;
         var skip = (int)height - Take;
         if (skip < 0) skip = 0;
         var blocks = await GetBlocks(skip, Take);

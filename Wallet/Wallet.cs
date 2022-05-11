@@ -45,7 +45,7 @@ public interface IWallet
     /// </summary>
     /// <param name="address"></param>
     /// <returns></returns>
-    Task<byte[]> Payout(string address);
+    Task<byte[]?> Payout(string address);
 }
 
 /// <summary>
@@ -79,17 +79,32 @@ public class Wallet : IWallet
     /// </summary>
     /// <param name="address"></param>
     /// <returns></returns>
-    public async Task<byte[]> Payout(string address)
+    public async Task<byte[]?> Payout(string address)
     {
         var amount = _walletSession.GetNextAmount();
         var walletTransaction = CreateTransaction((ulong)amount, 0, address);
-        var result = await _dataService.SendTransaction(walletTransaction.Transaction);
-        if (!result)
+        if (!await _dataService.SendTransaction(walletTransaction.Transaction))
         {
             _walletSession.Notify(new[] { walletTransaction.Transaction });
+            return null;
         }
-        
-        return result ? walletTransaction.Transaction.TxnId : null;
+
+        // Wallet is unaware of confirmations and will keep adding transactions to the cache.
+        // If the block moves forward or the abort counter is reached we can verify the transaction. 
+        var abortCounter = 5000;
+        while (_dataService.BlockHeight == await _dataService.BlockCount())
+        {
+            // Abort counter could be increased in case we hit congestion?
+            if (abortCounter == 200000) break;
+            Thread.Sleep(5000);
+            abortCounter += 5000;
+        }
+
+        // Check if the transaction exists.
+        if (await _dataService.ConfirmTransaction(walletTransaction.Transaction.TxnId))
+            return walletTransaction.Transaction.TxnId;
+        _walletSession.Notify(new[] { walletTransaction.Transaction });
+        return null;
     }
 
     /// <summary>
