@@ -11,6 +11,15 @@ namespace Faucet.Data;
 /// <summary>
 /// 
 /// </summary>
+public enum TransactionType
+{
+    Cain,
+    Mempool
+}
+
+/// <summary>
+/// 
+/// </summary>
 public class DataService
 {
     private static readonly object Locking = new();
@@ -20,9 +29,8 @@ public class DataService
     private readonly IHostApplicationLifetime _applicationLifetime;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly string _url;
+    private ulong _blockHeight;
 
-    public ulong BlockHeight { get; private set; }
-    
     private const int Take = 15;
     private const long Coin = 1000_000_000;
     
@@ -33,7 +41,28 @@ public class DataService
         _url = url;
         HandleGetBlocks();
     }
-
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    public ulong BlockHeight
+    {
+        get
+        {
+            lock (Locking)
+            {
+                return _blockHeight;
+            }
+        }
+        private set
+        {
+            lock (Locking)
+            {
+                _blockHeight = value;
+            }
+        }
+    }
+    
     /// <summary>
     /// 
     /// </summary>
@@ -65,16 +94,40 @@ public class DataService
     /// <returns></returns>
     public async Task<bool> ConfirmTransaction(byte[] txId)
     {
+        var transaction = await GetTransaction(txId, TransactionType.Cain);
+        return transaction is not null && transaction.TxnId.Xor(txId);
+    }
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="txId"></param>
+    /// <returns></returns>
+    public async Task<bool> IsTransactionInMemPool(byte[] txId)
+    {
+        var transaction = await GetTransaction(txId, TransactionType.Mempool);
+        return transaction is not null && transaction.TxnId.Xor(txId);
+    }
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="txId"></param>
+    /// <param name="transactionType"></param>
+    /// <returns></returns>
+    private async Task<Transaction?> GetTransaction(byte[] txId, TransactionType transactionType)
+    {
         var httpClient = _httpClientFactory.CreateClient();
-        var url = $"{_url}/chain/transaction/{txId.ByteToHex()}";
+        var path = transactionType == TransactionType.Cain ? "chain" : "mempool";
+        var url = $"{_url}/{path}/transaction/{txId.ByteToHex()}";
         using var httpResponseMessage = await httpClient.SendAsync(new HttpRequestMessage(HttpMethod.Get, new Uri(url)));
         using var stream = httpResponseMessage.Content.ReadAsStringAsync();
         var read = await stream;
         var jObject = JObject.Parse(read);
         var jToken = jObject.GetValue("transaction");
-        if (!httpResponseMessage.IsSuccessStatusCode) return false;
+        if (!httpResponseMessage.IsSuccessStatusCode) return null;
         var transaction = jToken?.ToObject<Transaction>();
-        return transaction is not null && transaction.TxnId.Xor(txId);
+        return transaction;
     }
 
     /// <summary>

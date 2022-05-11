@@ -90,15 +90,15 @@ public class Wallet : IWallet
         }
 
         // Wallet is unaware of confirmations and will keep adding transactions to the cache.
-        // If the block moves forward or the abort counter is reached we can verify the transaction. 
-        var abortCounter = 5000;
-        while (_dataService.BlockHeight == await _dataService.BlockCount())
+        // If the transaction is ether in the mempool or the PPoS cache, it will wait until it's removed.
+        // Can be an issue if the mempool is congested.
+        while (await _dataService.IsTransactionInMemPool(walletTransaction.Transaction.TxnId))
         {
-            // Abort counter could be increased in case we hit congestion?
-            if (abortCounter == 200000) break;
             Thread.Sleep(5000);
-            abortCounter += 5000;
         }
+
+        // Wait before we check.
+        await Task.Delay(20000);
 
         // Check if the transaction exists.
         if (await _dataService.ConfirmTransaction(walletTransaction.Transaction.TxnId))
