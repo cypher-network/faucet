@@ -180,7 +180,7 @@ public class DataService
         {
             while (!_applicationLifetime.ApplicationStopping.IsCancellationRequested)
             {
-                await LatestTopBlocks(); 
+                await LatestTop(); 
                 Thread.Sleep(10000);
             }
         });
@@ -218,44 +218,46 @@ public class DataService
     /// <summary>
     /// 
     /// </summary>
-    private async Task LatestTopBlocks()
+    private async Task LatestTop()
     {
         var height = await BlockCount();
-        if (BlockHeight == height) return;
-        BlockHeight = height;
-        var skip = (int)height - Take;
-        if (skip < 0) skip = 0;
-        var blocks = await GetBlocks(skip, Take);
-        if (blocks is null) return;
-        lock (Locking)
+        if (height > BlockHeight)
         {
-            _blocks.Clear();
-            _blocks.AddRange(blocks.Select(block => new BlockView
+            BlockHeight = height;
+            var skip = (int)height - Take;
+            if (skip < 0) skip = 0;
+            var blocks = await GetBlocks(skip, Take);
+            if (blocks is null) return;
+            lock (Locking)
             {
-                Height = block.Height,
-                Size = block.Size,
-                NrTx = block.NrTx,
-                Staked = block.BlockPos.Bits,
-                Reward = Convert.ToDecimal(block.Txs[0].Vout[0].A) / Coin
-            }));
-
-            _transactionViews.Clear();
-            foreach (var txs in blocks.Select(x => x.Txs))
-            {
-                foreach (var tx in txs)
+                _blocks.Clear();
+                _blocks.AddRange(blocks.Select(block => new BlockView
                 {
-                    var index = 0;
-                    if (tx.Vout.Length == 3)
+                    Height = block.Height,
+                    Size = block.Size,
+                    NrTx = block.NrTx,
+                    Staked = block.BlockPos.Bits,
+                    Reward = Convert.ToDecimal(block.Txs[0].Vout[0].A) / Coin
+                }));
+
+                _transactionViews.Clear();
+                foreach (var txs in blocks.Select(x => x.Txs))
+                {
+                    foreach (var tx in txs)
                     {
-                        index = 1;
-                    }
-                    var txView = new TransactionView
-                    {
-                        TxnId = Convert.ToHexString(tx.TxnId),
-                        To = Convert.ToHexString(tx.Vout[index].P)
-                    };
+                        var index = 0;
+                        if (tx.Vout.Length == 3)
+                        {
+                            index = 1;
+                        }
+                        var txView = new TransactionView
+                        {
+                            TxnId = Convert.ToHexString(tx.TxnId),
+                            To = Convert.ToHexString(tx.Vout[index].P)
+                        };
                     
-                    _transactionViews.Add(txView);
+                        _transactionViews.Add(txView);
+                    }
                 }
             }
         }
