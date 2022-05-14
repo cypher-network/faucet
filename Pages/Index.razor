@@ -6,6 +6,7 @@
 @using Faucet.Helpers
 @using Faucet.Services
 @using Faucet.Wallet
+@using System.Reactive.Linq
 
 @inject DataService LatestBlocksService
 @inject IWallet Wallet;
@@ -102,7 +103,7 @@
     private RadzenDataGrid<TransactionView>? _gridTxs;
     private string _address = string.Empty;
     private string _txId = "none";
-    private System.Threading.Timer _timerReload;
+    private IDisposable _timerReload;
     private Timer _timerWait;
     private bool _isLoading;
     private int _count = 1;
@@ -118,11 +119,11 @@
         base.OnInitialized();
         _timerWait = new Timer();
         _timerWait.Elapsed += TimerWaitOnElapsed;
-        _timerReload = new System.Threading.Timer((_) =>
+        _timerReload = Observable.Interval(TimeSpan.FromMilliseconds(10000)).Subscribe(_ =>
         {
             Reload();
             InvokeAsync(StateHasChanged);
-        }, null, 5000, 10000);
+        });
     }
     
     private void TimerWaitOnElapsed(object? sender, ElapsedEventArgs e)
@@ -225,6 +226,7 @@
         _txCount = query.Count();
         _txs = query;
         _isLoading = false;
+
         return Task.CompletedTask;
     }
     
