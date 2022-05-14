@@ -88,7 +88,7 @@ public class Wallet : IWallet
             _walletSession.Notify(new[] { walletTransaction.Transaction });
             return null;
         }
-
+        
         // Wallet is unaware of confirmations and will keep adding transactions to the cache.
         // If the transaction is ether in the mempool or the PPoS cache, it will wait until it's removed.
         // Can be an issue if the mempool is congested.
@@ -96,13 +96,26 @@ public class Wallet : IWallet
         {
             Thread.Sleep(5000);
         }
-
-        // Wait before we check.
-        await Task.Delay(20000);
-
-        // Check if the transaction exists.
-        if (await _dataService.ConfirmTransaction(walletTransaction.Transaction.TxnId))
-            return walletTransaction.Transaction.TxnId;
+        
+        var abortCounter = 5000;
+        var found = false;
+        while (!found)
+        {
+            // Keep checking if the transaction exists.
+            if (!await _dataService.ConfirmTransaction(walletTransaction.Transaction.TxnId))
+            {
+                // Abort after 1 min in case nothing is happening on the network.
+                if (abortCounter == 60000) break;
+                Thread.Sleep(5000);
+                abortCounter += 5000;
+            }
+            else
+            {
+                found = true;
+            }
+        }
+        
+        if (found) return walletTransaction.Transaction.TxnId;
         _walletSession.Notify(new[] { walletTransaction.Transaction });
         return null;
     }
