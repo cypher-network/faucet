@@ -45,7 +45,7 @@ public interface IWallet
     /// </summary>
     /// <param name="address"></param>
     /// <returns></returns>
-    Task<byte[]?> Payout(string address);
+    Task<byte[]?> Payout(string address, int amount);
 }
 
 /// <summary>
@@ -78,11 +78,18 @@ public class Wallet : IWallet
     /// 
     /// </summary>
     /// <param name="address"></param>
+    /// <param name="amount"></param>
     /// <returns></returns>
-    public async Task<byte[]?> Payout(string address)
+    public async Task<byte[]?> Payout(string address, int amount)
     {
-        var amount = _walletSession.GetNextAmount();
+        // Will be removed when miner is connected.
+        if (amount == 0)
+        {
+            amount = _walletSession.GetNextAmount();
+        }
+        
         var walletTransaction = CreateTransaction((ulong)amount, 0, address);
+        if (walletTransaction.Transaction is null) return null;
         if (!await _dataService.SendTransaction(walletTransaction.Transaction))
         {
             _walletSession.Notify(new[] { walletTransaction.Transaction });
@@ -516,12 +523,13 @@ public class Wallet : IWallet
 
             var size = transaction.GetSize() / 1024;
             var timer = new Stopwatch();
-            var t = (int)(delay * decimal.Round(size, 2, MidpointRounding.ToZero) * 600 * (decimal)1.6);
+            var t = (uint)(delay * decimal.Round(size, 2, MidpointRounding.ToZero) * 600 * (decimal)1.6);
             timer.Start();
-            var nonce = Cryptography.Sloth.Eval(t, x);
+            var sloth = new Cryptography.Sloth(0, CancellationToken.None, true);
+            var nonce = sloth.EvalAsync(t, x).Result;
             timer.Stop();
             var y = System.Numerics.BigInteger.Parse(nonce);
-            var success = Cryptography.Sloth.Verify(t, x, y);
+            var success = sloth.Verify(t, x, y);
             if (!success)
             {
                 {
@@ -544,7 +552,7 @@ public class Wallet : IWallet
             var lockTime = Helpers.Utils.GetAdjustedTimeAsUnixTimestamp() & ~timer.Elapsed.Seconds;
             vTime = new Vtime
             {
-                I = t,
+                I = (int)t,
                 M = hash,
                 N = nonce.ToBytes(),
                 W = timer.Elapsed.Ticks,

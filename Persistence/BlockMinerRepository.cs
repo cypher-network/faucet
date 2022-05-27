@@ -1,0 +1,36 @@
+// CypherNetwork by Matthew Hellyer is licensed under CC BY-NC-ND 4.0.
+// To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-nd/4.0
+
+using Faucet.Models;
+using ILogger = Serilog.ILogger;
+
+namespace Faucet.Persistence;
+
+/// <summary>
+/// </summary>
+public interface IBlockMinerRepository : IRepository<BlockMiner>
+{
+
+}
+
+/// <summary>
+/// </summary>
+public class BlockMinerRepository : Repository<BlockMiner>, IBlockMinerRepository
+{
+    private readonly ILogger _logger;
+    private readonly IStoreDb _storeDb;
+    private readonly ReaderWriterLockSlim _sync = new();
+
+    /// <summary>
+    /// </summary>
+    /// <param name="storeDb"></param>
+    /// <param name="logger"></param>
+    public BlockMinerRepository(IStoreDb storeDb, ILogger logger)
+        : base(storeDb, logger)
+    {
+        _storeDb = storeDb;
+        _logger = logger.ForContext("SourceContext", nameof(BlockMinerRepository));
+
+        SetTableName(StoreDb.BlockMinerTable.ToString());
+    }
+}

@@ -137,7 +137,7 @@
             {
                 _messageSpinner = "Processing transaction..";
                 await InvokeAsync(StateHasChanged);
-                var txId = await Wallet.Payout(_address);
+                var txId = await Wallet.Payout(_address, 0);
                 _txId = txId.ByteToHex();
             }
             catch (Exception)

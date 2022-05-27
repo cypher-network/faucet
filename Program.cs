@@ -1,6 +1,14 @@
+using Faucet;
+using Faucet.Cryptography;
 using Faucet.Data;
+using Faucet.Extensions;
+using Faucet.Hubs;
+using Faucet.Ledger;
+using Faucet.Persistence;
 using Faucet.Services;
 using Faucet.Wallet;
+using Serilog;
+
 
 var config = new ConfigurationBuilder()
 
@@ -9,12 +17,35 @@ var config = new ConfigurationBuilder()
     .AddCommandLine(args)
     .Build();
 
+const string logSectionName = "Log";
+if (config.GetSection(logSectionName) != null)
+{
+    Log.Logger = new LoggerConfiguration()
+        .WriteTo.File(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "faucet.log"))
+        .ReadFrom.Configuration(config, logSectionName)
+        .CreateLogger();
+}
+else
+{
+    throw new Exception($"No \"{logSectionName}\" section found in appsettings.json");
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
+builder.Services.AddSignalR();
+builder.Services.AddDataKeysProtection(config);
+builder.Services.AddSingleton<IFaucetSystem, FaucetSystem>();
+builder.Services.AddSingleton<IUnitOfWork>(sp =>
+{
+    var unitOfWork = new UnitOfWork("storedb", Log.Logger);
+    return unitOfWork;
+});
 builder.Services.AddSingleton<IWalletSession, WalletSession>();
+builder.Services.AddSingleton<IBlockchain, Blockchain>();
+builder.Services.AddTransient<ICrypto, Crypto>();
 builder.Services.AddTransient<IWallet, Wallet>();
 builder.Services.AddSingleton(sp =>
 {
@@ -23,13 +54,21 @@ builder.Services.AddSingleton(sp =>
     return dataServices;
 });
 builder.Services.AddSingleton<IBackgroundWorkerQueue, BackgroundWorkerQueue>();
+builder.Services.AddSingleton(Log.Logger);
 builder.Services.AddHostedService<LongRunningService>();
 builder.Services.AddHttpClient();
+builder.Services.AddLogging(loggingBuilder =>
+{
+    loggingBuilder.AddSerilog(dispose: true);
+});
+builder.Logging.AddSerilog();
 
 var app = builder.Build();
 
 app.Lifetime.ApplicationStarted.Register(() =>
 {
+    app.Services.GetService<IUnitOfWork>();
+    app.Services.GetService<IBlockchain>();
     app.Services.GetService<IWalletSession>();
 });
 
@@ -41,12 +80,15 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
 
+app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
-
+app.UseEndpoints(endpoints =>
+{
+    endpoints.MapHub<MinerHub>("/cypminer");
+});
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
 
