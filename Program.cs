@@ -7,6 +7,7 @@ using Faucet.Ledger;
 using Faucet.Persistence;
 using Faucet.Services;
 using Faucet.Wallet;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Serilog;
 
 
@@ -62,6 +63,7 @@ builder.Services.AddLogging(loggingBuilder =>
     loggingBuilder.AddSerilog(dispose: true);
 });
 builder.Logging.AddSerilog();
+builder.Services.AddLettuceEncrypt();
 
 var app = builder.Build();
 
