@@ -50,7 +50,7 @@ builder.Services.AddTransient<IWallet, Wallet>();
 builder.Services.AddSingleton(sp =>
 {
     var url = config?["HttpEndPoint"];
-    var dataServices = new DataService(sp.GetService<IHostApplicationLifetime>(), sp.GetService<IHttpClientFactory>(), url);
+    var dataServices = new DataService(sp.GetService<IHostApplicationLifetime>(), sp.GetService<IHttpClientFactory>(), url, Log.Logger);
     return dataServices;
 });
 builder.Services.AddSingleton<IBackgroundWorkerQueue, BackgroundWorkerQueue>();
@@ -87,7 +87,7 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseEndpoints(endpoints =>
 {
-    endpoints.MapHub<MinerHub>("/cypminer");
+    endpoints.MapHub<MinerHub>("/miner");
 });
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
