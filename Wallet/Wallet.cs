@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using Dawn;
 using Faucet.Data;
+using Faucet.Extensions;
 using Faucet.Helpers;
 using Faucet.Models;
 using Libsecp256k1Zkp.Net;
@@ -44,6 +45,7 @@ public interface IWallet
     /// 
     /// </summary>
     /// <param name="address"></param>
+    /// <param name="amount"></param>
     /// <returns></returns>
     Task<byte[]?> Payout(string address, int amount);
 }
@@ -57,7 +59,8 @@ public class Wallet : IWallet
     private readonly IWalletSession _walletSession;
     private readonly DataService _dataService;
     private readonly IHostApplicationLifetime _applicationLifetime;
-    private readonly ILogger<Wallet> _logger;
+    private readonly Serilog.ILogger _logger;
+    
     /// <summary>
     /// 
     /// </summary>
@@ -66,7 +69,7 @@ public class Wallet : IWallet
     /// <param name="applicationLifetime"></param>
     /// <param name="logger"></param>
     public Wallet(IWalletSession walletSession, DataService dataService, IHostApplicationLifetime applicationLifetime,
-        ILogger<Wallet> logger)
+        Serilog.ILogger logger)
     {
         _walletSession = walletSession;
         _dataService = dataService;
@@ -147,7 +150,7 @@ public class Wallet : IWallet
             var (spendKey, scanKey) = Unlock();
             if (spendKey == null || scanKey == null)
                 return new WalletTransaction(null, "Unable to unlock node wallet");
-            _logger.LogInformation("Coinstake Amount: [{@amount}]", amount);
+            _logger.Information("Coinstake Amount: [{@amount}]", amount);
             _walletSession.Amount = amount.MulWithNanoTan();
             _walletSession.Reward = reward;
             _walletSession.RecipientAddress = address;
@@ -173,7 +176,7 @@ public class Wallet : IWallet
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex.Message);
+            _logger.Here().Error(ex.Message);
         }
 
         return new WalletTransaction(null, "Coinstake transaction failed");
@@ -250,7 +253,7 @@ public class Wallet : IWallet
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unable to unlock master key");
+            _logger.Here().Error(ex, "Unable to unlock master key");
         }
 
         return (null, null);
@@ -291,7 +294,7 @@ public class Wallet : IWallet
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error calculating the node wallet change");
+            _logger.Here().Error(ex, "Error calculating the node wallet change");
             return new Tuple<Output, ulong>(null, 0);
         }
     }
@@ -317,7 +320,7 @@ public class Wallet : IWallet
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unable to retrieve node wallet balances");
+            _logger.Here().Error(ex, "Unable to retrieve node wallet balances");
         }
 
         return balances.ToArray();
@@ -371,7 +374,7 @@ public class Wallet : IWallet
                 }
                 catch (Exception)
                 {
-                    _logger.LogError("Unable to create inner ring member");
+                    _logger.Here().Error("Unable to create inner ring member");
                     return null;
                 }
 
@@ -407,7 +410,7 @@ public class Wallet : IWallet
             }
             catch (Exception ex)
             {
-                _logger.LogError("Unable to create outer ring members");
+                _logger.Here().Error("Unable to create outer ring members");
                 return null;
             }
         }
@@ -494,7 +497,7 @@ public class Wallet : IWallet
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex.Message);
+            _logger.Here().Error(ex.Message);
             return TaskResult<Transaction>.CreateFailure(JObject.FromObject(new
             {
                 success = false, message = ex.Message
@@ -562,7 +565,7 @@ public class Wallet : IWallet
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex.Message);
+            _logger.Here().Error(ex.Message);
             return TaskResult<Vtime>.CreateFailure(JObject.FromObject(new { success = false, message = ex.Message }));
         }
 

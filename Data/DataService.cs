@@ -1,6 +1,7 @@
 // CypherNetwork by Matthew Hellyer is licensed under CC BY-NC-ND 4.0.
 // To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-nd/4.0
 
+using Faucet.Extensions;
 using Faucet.Helpers;
 using Faucet.Models;
 using MessagePack;
@@ -29,40 +30,21 @@ public class DataService
     private readonly IHostApplicationLifetime _applicationLifetime;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly string _url;
+    private readonly Serilog.ILogger _logger;
     private ulong _blockHeight;
 
     private const int Take = 15;
     private const long Coin = 1000_000_000;
     
-    public DataService(IHostApplicationLifetime applicationLifetime, IHttpClientFactory httpClientFactory, string url)
+    public DataService(IHostApplicationLifetime applicationLifetime, IHttpClientFactory httpClientFactory, string url, Serilog.ILogger logger)
     {
         _applicationLifetime = applicationLifetime;
         _httpClientFactory = httpClientFactory;
         _url = url;
+        _logger = logger;
         HandleGetBlocks();
     }
-    
-    /// <summary>
-    /// 
-    /// </summary>
-    public ulong BlockHeight
-    {
-        get
-        {
-            lock (Locking)
-            {
-                return _blockHeight;
-            }
-        }
-        private set
-        {
-            lock (Locking)
-            {
-                _blockHeight = value;
-            }
-        }
-    }
-    
+
     /// <summary>
     /// 
     /// </summary>
@@ -180,8 +162,18 @@ public class DataService
         {
             while (!_applicationLifetime.ApplicationStopping.IsCancellationRequested)
             {
-                await LatestTop(); 
-                Thread.Sleep(10000);
+                try
+                {
+                    await LatestTop();
+                }
+                catch (Exception e)
+                {
+                    _logger.Here().Error("{@Message}", e.Message);
+                }
+                finally
+                {
+                    Thread.Sleep(10000);
+                }
             }
         });
     }
@@ -221,9 +213,9 @@ public class DataService
     private async Task LatestTop()
     {
         var height = await BlockCount();
-        if (height > BlockHeight)
+        if (height > _blockHeight)
         {
-            BlockHeight = height;
+            _blockHeight = height;
             var skip = (int)height - Take;
             if (skip < 0) skip = 0;
             var blocks = await GetBlocks(skip, Take);
