@@ -7,7 +7,6 @@ using Faucet.Ledger;
 using Faucet.Persistence;
 using Faucet.Services;
 using Faucet.Wallet;
-using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Serilog;
 
 
@@ -22,7 +21,6 @@ const string logSectionName = "Log";
 if (config.GetSection(logSectionName) != null)
 {
     Log.Logger = new LoggerConfiguration()
-        .WriteTo.File(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "faucet.log"))
         .ReadFrom.Configuration(config, logSectionName)
         .CreateLogger();
 }
@@ -63,6 +61,7 @@ builder.Services.AddLogging(loggingBuilder =>
     loggingBuilder.AddSerilog(dispose: true);
 });
 builder.Logging.AddSerilog();
+
 builder.Services.AddLettuceEncrypt();
 
 var app = builder.Build();
@@ -70,8 +69,8 @@ var app = builder.Build();
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     app.Services.GetService<IUnitOfWork>();
-    app.Services.GetService<IBlockchain>();
     app.Services.GetService<IWalletSession>();
+    app.Services.GetService<IBlockchain>();
 });
 
 // Configure the HTTP request pipeline.
