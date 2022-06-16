@@ -7,6 +7,8 @@
 @using Faucet.Services
 @using Faucet.Wallet
 @using System.Reactive.Linq
+@using NBitcoin
+@using NBitcoin.Stealth
 
 @inject DataService LatestBlocksService
 @inject IWallet Wallet;
@@ -179,6 +181,16 @@
                     _hiddenAddressMessage = string.Empty;
                     _messageAddress = "Invalid Base58";
                     return;
+                }
+
+                try
+                {
+                    new BitcoinStealthAddress(_address, Network.TestNet);
+                }
+                catch (Exception)
+                {
+                    _hiddenAddressMessage = string.Empty;
+                    _messageAddress = "Invalid testnet address";
                 }
 
                 if (_wait) return;
