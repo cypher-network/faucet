@@ -81,7 +81,7 @@ public class WalletSession : IWalletSession
         });
         
         HandleSafeguardBlocks();
-        HandelConsumed();
+        //HandelConsumed();
     }
 
     /// <summary>
