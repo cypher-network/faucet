@@ -77,7 +77,7 @@ public class DataService
     public async Task<bool> ConfirmTransaction(byte[] txId)
     {
         var transaction = await GetTransaction(txId, TransactionType.Cain);
-        return transaction is not null && transaction.TxnId.Xor(txId);
+        return transaction is not null;
     }
     
     /// <summary>
@@ -88,7 +88,7 @@ public class DataService
     public async Task<bool> IsTransactionInMemPool(byte[] txId)
     {
         var transaction = await GetTransaction(txId, TransactionType.Mempool);
-        return transaction is not null && transaction.TxnId.Xor(txId);
+        return transaction is not null;
     }
     
     /// <summary>

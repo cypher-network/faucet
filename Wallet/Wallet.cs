@@ -90,43 +90,54 @@ public class Wallet : IWallet
         {
             amount = _walletSession.GetNextAmount();
         }
-        
+
         var walletTransaction = CreateTransaction((ulong)amount, 0, address);
-        if (walletTransaction.Transaction is null) return null;
+        if (walletTransaction.Transaction is null)
+        {
+            _logger.Here().Information("Payout failed {@Message}", walletTransaction.Message);
+            return null;
+        }
+
         if (!await _dataService.SendTransaction(walletTransaction.Transaction))
         {
-            _walletSession.Notify(new[] { walletTransaction.Transaction });
+            _logger.Here().Information("Payout failed {@Message}", "Could not send transaction");
             return null;
         }
         
-        // Wallet is unaware of confirmations and will keep adding transactions to the cache.
-        // If the transaction is ether in the mempool or the PPoS cache, it will wait until it's removed.
-        // Can be an issue if the mempool is congested.
-        while (await _dataService.IsTransactionInMemPool(walletTransaction.Transaction.TxnId))
-        {
-            Thread.Sleep(5000);
-        }
-        
-        var abortCounter = 5000;
+        var blockCount = await _dataService.BlockCount();
+        const int tries = 3;
+        var hasTried = 0;
         var found = false;
+        
         while (!found)
         {
-            // Keep checking if the transaction exists.
-            if (!await _dataService.ConfirmTransaction(walletTransaction.Transaction.TxnId))
-            {
-                // Abort after 1 min in case nothing is happening on the network.
-                if (abortCounter == 60000) break;
-                Thread.Sleep(5000);
-                abortCounter += 5000;
-            }
-            else
+            if (hasTried == tries) break;
+            var counter = await _dataService.BlockCount();
+            if (blockCount >= counter) continue;
+            if (await _dataService.ConfirmTransaction(walletTransaction.Transaction.TxnId))
             {
                 found = true;
             }
+            else
+            {
+                hasTried++;
+                blockCount = await _dataService.BlockCount();
+            }
         }
-        
-        if (found) return walletTransaction.Transaction.TxnId;
-        _walletSession.Notify(new[] { walletTransaction.Transaction });
+
+        if (found)
+        {
+            _walletSession.CacheTransactions.Clear();
+            var change = walletTransaction.Transaction.Vout[1];
+            var output = new Output
+            {
+                C = change.C.ByteToHex(), E = change.E.ByteToHex(), N = change.N.ByteToHex(), T = (sbyte)change.T
+            };
+            _walletSession.CacheTransactions.Add(change.C, output);
+            return walletTransaction.Transaction.TxnId;
+        }
+
+        _logger.Here().Information("Payout failed {@Message}", "Could not find the transaction");
         return null;
     }
 
@@ -150,7 +161,7 @@ public class Wallet : IWallet
             var (spendKey, scanKey) = Unlock();
             if (spendKey == null || scanKey == null)
                 return new WalletTransaction(null, "Unable to unlock node wallet");
-            _logger.Information("Coinstake Amount: [{@amount}]", amount);
+            _logger.Information("Coinstake Amount: {@amount}", amount);
             _walletSession.Amount = amount.MulWithNanoTan();
             _walletSession.Reward = reward;
             _walletSession.RecipientAddress = address;
@@ -162,17 +173,7 @@ public class Wallet : IWallet
             if (_walletSession.Amount > total)
                 return new WalletTransaction(null, "The stake amount exceeds the available commitment amount");
             var (transaction, message) = RingConfidentialTransaction(_walletSession);
-            if (transaction is null) return new WalletTransaction(null, message);
-            foreach (var vout in transaction.Vout)
-            {
-                var output = new Output
-                {
-                    C = vout.C.ByteToHex(), E = vout.E.ByteToHex(), N = vout.N.ByteToHex(), T = (sbyte)vout.T
-                };
-                _walletSession.CacheTransactions.Add(vout.C, output);
-            }
-
-            return new WalletTransaction(transaction, null);
+            return transaction is null ? new WalletTransaction(null, message) : new WalletTransaction(transaction, null);
         }
         catch (Exception ex)
         {
@@ -351,6 +352,7 @@ public class Wallet : IWallet
         var (spendKey, scanKey) = Unlock();
         var transactions = _walletSession.GetSafeGuardBlocks().SelectMany(x => x.Txs).ToList();
         transactions.Shuffle();
+
         for (var k = 0; k < nRows - 1; ++k)
         for (var i = 0; i < nCols; ++i)
         {

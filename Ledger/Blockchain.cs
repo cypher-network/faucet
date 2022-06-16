@@ -34,6 +34,7 @@ public class Blockchain: IDisposable, IBlockchain
     private readonly Random _random = new();
     private readonly CancellationTokenSource _cancellationToken = new();
     
+    private IDisposable _disposablePayBlockMiners;
     private IDisposable _disposableNewBlock;
     private IDisposable _disposableDecideWinners;
     private int _countDown = 11;
@@ -89,7 +90,7 @@ public class Blockchain: IDisposable, IBlockchain
         finally
         {
             Task.WaitAll(NextBlock(), DecideWinners());
-            PayBlockMiners(); 
+            PayBlockMinersInterval(); 
         }
     }
 
@@ -97,41 +98,44 @@ public class Blockchain: IDisposable, IBlockchain
     /// 
     /// </summary>
     /// <returns></returns>
-    private void PayBlockMiners()
+    private void PayBlockMinersInterval()
     {
-        Task.Run(async () =>
+        _disposablePayBlockMiners = Observable.Interval(TimeSpan.FromSeconds(10)).Subscribe(_ =>
         {
-            while (!_cancellationToken.IsCancellationRequested)
-            {
-                try
-                {
-                    foreach (var winner in await (await _faucetSystem.UnitOfWork()).BlockMinerProofWinnerRepository
-                                 .WhereAsync(x => new ValueTask<bool>(x.TxId is null)))
-                    {
-                        var amount = (int)Math.Round(Convert.ToDecimal(int.MaxValue) / winner.Reward,
-                            MidpointRounding.ToEven);
-                        var txId = await _faucetSystem.Wallet().Payout(winner.Address.FromBytes(), amount);
-                        if (txId is null) return;
-                        var reward = MessagePackSerializer.Serialize(new Reward(txId, amount));
-                        var cipher = _faucetSystem.Crypto().BoxSeal(reward, winner.PublicKey[1..33]);
-                        await _hubContext.Clients.All.SendAsync("Reward", cipher);
-                        var updateWinner = winner with { Reward = amount, TxId = txId };
-                        await (await _faucetSystem.UnitOfWork()).BlockMinerProofWinnerRepository.PutAsync(
-                            updateWinner.Hash, updateWinner);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.Here().Error("{@Message}", ex.Message);
-                }
-                finally
-                {
-                    Thread.Sleep(10000);
-                }
-            }
+            if (_cancellationToken.IsCancellationRequested) return;
+            AsyncHelper.RunSync(async delegate { await Payout(); });
         });
     }
-    
+
+    /// <summary>
+    /// 
+    /// </summary>
+    private async Task Payout()
+    {
+        try
+        {
+            var blockMinerProofWinners = await (await _faucetSystem.UnitOfWork()).BlockMinerProofWinnerRepository
+                .WhereAsync(x => new ValueTask<bool>(x.TxId is null));
+            if (!blockMinerProofWinners.Any()) return;
+            foreach (var winner in blockMinerProofWinners)
+            {
+                var amount = (int)Math.Round(Convert.ToDecimal(int.MaxValue) / winner.Reward, MidpointRounding.ToEven);
+                var txId = await _faucetSystem.Wallet().Payout(winner.Address.FromBytes(), amount);
+                if (txId is null) continue;
+                var reward = MessagePackSerializer.Serialize(new Reward(txId, amount));
+                var cipher = _faucetSystem.Crypto().BoxSeal(reward, winner.PublicKey[1..33]);
+                await _hubContext.Clients.All.SendAsync("Reward", cipher);
+                var updateWinner = winner with { Reward = amount, TxId = txId };
+                await (await _faucetSystem.UnitOfWork()).BlockMinerProofWinnerRepository.PutAsync(updateWinner.Hash,
+                    updateWinner);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Here().Error("{@Message}", ex.Message);
+        }
+    }
+
     /// <summary>
     /// 
     /// </summary>
@@ -238,6 +242,7 @@ public class Blockchain: IDisposable, IBlockchain
     {
         _cancellationToken.Cancel();
         _cancellationToken.Dispose();
+        _disposablePayBlockMiners.Dispose();
         _disposableNewBlock.Dispose();
         _disposableDecideWinners.Dispose();
     }
