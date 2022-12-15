@@ -47,6 +47,28 @@ public class FaucetController : Controller
     }
     
     /// <summary>
+    /// 
+    /// </summary>
+    /// <returns></returns>
+    [HttpGet("emission", Name = "GetEmission")]
+    [ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetEmission()
+    {
+        try
+        {
+            var emission = LedgerConstant.Distribution - _faucetSystem.Blockchain().Supply;
+            return new ObjectResult(new { emission });
+        }
+        catch (Exception ex)
+        {
+            _logger.Here().Error(ex, "Unable to get the emission");
+        }
+
+        return NotFound();
+    }
+    
+    /// <summary>
     /// </summary>
     /// <returns></returns>
     [HttpGet("height", Name = "GetBlockHeight")]
