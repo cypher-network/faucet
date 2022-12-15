@@ -16,9 +16,10 @@ public interface IStoreDb
 public sealed class StoreDb : IStoreDb, IDisposable
 {
     public static readonly StoreDb DataProtectionTable = new(1, "DataProtectionTable");
-    public static readonly StoreDb BlockMinerTable = new(2, "BlockMinerTable");
-    public static readonly StoreDb BlockMinerProofTable = new(3, "BlockMinerProofTable");
-    public static readonly StoreDb BlockMinerProofWinnerTable = new(3, "BlockMinerProofWinnerTable");
+    public static readonly StoreDb BlockMinerTable = new(2, "MinerTable");
+    public static readonly StoreDb BlockMinerProofTable = new(3, "ProofTable");
+    public static readonly StoreDb BlockMinerProofWinnerTable = new(4, "WinnerTable");
+    public static readonly StoreDb TransactionTable = new(5, "TransactionTable");
 
     private readonly string _name;
     private readonly byte[] _nameBytes;
@@ -92,7 +93,8 @@ public sealed class StoreDb : IStoreDb, IDisposable
             { DataProtectionTable.ToString(), ColumnFamilyOptions(blockBasedTableOptions) },
             { BlockMinerTable.ToString(), ColumnFamilyOptions(blockBasedTableOptions) },
             { BlockMinerProofTable.ToString(), ColumnFamilyOptions(blockBasedTableOptions) },
-            { BlockMinerProofWinnerTable.ToString(), ColumnFamilyOptions(blockBasedTableOptions) }
+            { BlockMinerProofWinnerTable.ToString(), ColumnFamilyOptions(blockBasedTableOptions) },
+            { TransactionTable.ToString(), ColumnFamilyOptions(blockBasedTableOptions) }
         };
         return columnFamilies;
     }

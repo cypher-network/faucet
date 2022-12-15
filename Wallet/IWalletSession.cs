@@ -24,6 +24,5 @@ public interface IWalletSession
     Task<Tuple<bool, string>> Login(string seed, string passphrase);
     Task<Tuple<bool, string>> InitializeWallet(Output[] outputs);
     IReadOnlyList<Block> GetSafeGuardBlocks();
-    int GetNextAmount();
-    
+
 }

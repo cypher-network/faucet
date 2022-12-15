@@ -7,6 +7,7 @@ using Faucet.Ledger;
 using Faucet.Persistence;
 using Faucet.Services;
 using Faucet.Wallet;
+using Microsoft.AspNetCore.ResponseCompression;
 using Serilog;
 
 
@@ -58,11 +59,13 @@ builder.Services.AddHostedService<LongRunningService>();
 builder.Services.AddHttpClient();
 builder.Services.AddLogging(loggingBuilder =>
 {
-    loggingBuilder.AddSerilog(dispose: true);
+    loggingBuilder.AddSerilog();
 });
+
 builder.Logging.AddSerilog();
 
-builder.Services.AddLettuceEncrypt();
+
+//builder.Services.AddLettuceEncrypt();
 
 var app = builder.Build();
 
@@ -81,16 +84,18 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-
+app.MapControllers();
 app.UseRouting();
 app.UseEndpoints(endpoints =>
 {
-    endpoints.MapHub<MinerHub>("/miner");
+    endpoints.MapBlazorHub();
+    //endpoints.MapFallbackToPage("/_Host");
+    endpoints.MapHub<MinerHub>("/blockminer");
 });
-app.MapBlazorHub();
-app.MapFallbackToPage("/_Host");
+
+
+Console.WriteLine($"Process ID:{Environment.ProcessId}");
 
 app.Run();

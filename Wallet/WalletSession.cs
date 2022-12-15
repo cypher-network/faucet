@@ -8,12 +8,13 @@ using Faucet.Helpers;
 using Faucet.Models;
 using Faucet.Persistence;
 using Dawn;
+using Faucet.Extensions;
 using MessagePack;
 using NBitcoin;
 using Newtonsoft.Json;
 using Block = Faucet.Models.Block;
 using Transaction = Faucet.Models.Transaction;
-using Utils = Faucet.Helpers.Utils;
+using ILogger = Serilog.ILogger;
 
 namespace Faucet.Wallet;
 
@@ -46,14 +47,14 @@ public class WalletSession : IWalletSession
     private LoginData _loginData;
     private readonly object _readOnlySafeGuardLock = new();
     private IReadOnlyList<Block> _readOnlySafeGuardBlocks;
-    private readonly Random _random = new();
-    
+
     /// <summary>
     /// 
     /// </summary>
+    /// <param name="dataService"></param>
     /// <param name="applicationLifetime"></param>
     /// <param name="logger"></param>
-    public WalletSession(DataService dataService, IHostApplicationLifetime applicationLifetime, ILogger<WalletSession> logger)
+    public WalletSession(DataService dataService, IHostApplicationLifetime applicationLifetime, ILogger logger)
     {
         _dataService = dataService;
         _applicationLifetime = applicationLifetime;
@@ -81,7 +82,6 @@ public class WalletSession : IWalletSession
         });
         
         HandleSafeguardBlocks();
-        //HandelConsumed();
     }
 
     /// <summary>
@@ -93,15 +93,6 @@ public class WalletSession : IWalletSession
         workItem.Invoke();
     }
 
-    /// <summary>
-    /// 
-    /// </summary>
-    /// <returns></returns>
-    public int GetNextAmount()
-    {
-        return _random.Next(1, 5);
-    }
-    
     /// <summary>
     /// 
     /// </summary>
@@ -147,7 +138,7 @@ public class WalletSession : IWalletSession
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex.Message);
+            _logger.Here().Error("{@Message}", ex.Message);
         }
 
         return Task.FromResult(new Tuple<bool, string>(false, "Unable to login"));
@@ -171,7 +162,7 @@ public class WalletSession : IWalletSession
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex.Message);
+            _logger.Here().Error("{@Message}", ex.Message);
         }
 
         return Task.FromResult(new Tuple<bool, string>(false, "Node wallet setup failed"));
@@ -227,35 +218,7 @@ public class WalletSession : IWalletSession
         hdRoot = new Mnemonic(concatenateMnemonic).DeriveExtKey(passphrase.ToUnSecureString());
         concatenateMnemonic.ZeroString();
     }
-    
-    /// <summary>
-    /// 
-    /// </summary>
-    private void HandelConsumed()
-    {
-        Task.Run(() =>
-        {
-            while (!_applicationLifetime.ApplicationStopping.IsCancellationRequested)
-            {
-                try
-                {
-                    var removeUnused = Utils.GetUtcNow().AddSeconds(-30);
-                    foreach (var consumed in CacheConsumed.GetItems())
-                    {
-                        if (consumed.Time < removeUnused)
-                        {
-                            CacheConsumed.Remove(consumed.Commit);
-                        }
-                    }
-                }
-                finally
-                {
-                    Thread.Sleep(10000);
-                }
-            }
-        });
-    }
-    
+
     /// <summary>
     /// 
     /// </summary>
@@ -266,7 +229,7 @@ public class WalletSession : IWalletSession
             while (!_applicationLifetime.ApplicationStopping.IsCancellationRequested)
             {
                 var blocks = await _dataService.GetSafeGuardBlocks();
-                if (!blocks.Any()) return;
+                if (blocks != null && !blocks.Any()) return;
     
                 lock (_readOnlySafeGuardLock)
                 {

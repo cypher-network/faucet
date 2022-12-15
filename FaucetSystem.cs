@@ -5,6 +5,7 @@ using System.Security;
 using Faucet.Cryptography;
 using Faucet.Extensions;
 using Faucet.Helpers;
+using Faucet.Ledger;
 using Faucet.Persistence;
 using Faucet.Wallet;
 using ILogger = Serilog.ILogger;
@@ -17,12 +18,13 @@ namespace Faucet;
 public interface IFaucetSystem
 {
     IServiceScopeFactory ServiceScopeFactory { get; }
-    AsyncLazy<IUnitOfWork> UnitOfWork();
+    IUnitOfWork UnitOfWork();
     ICrypto Crypto();
     public SecureString PrivateKey { get; init; }
     public byte[] PublicKey { get; init; }
     IWallet Wallet();
-    AsyncLazy<IWalletSession> WalletSession();
+    IWalletSession WalletSession();
+    IBlockchain Blockchain();
 }
 
 /// <summary>
@@ -33,6 +35,8 @@ public class FaucetSystem : IFaucetSystem
     private readonly ILogger _logger;
     private IUnitOfWork _unitOfWork;
     private IWalletSession _walletSession;
+    private IBlockchain _blockchain;
+    private ICrypto _crypto;
     
     public SecureString PrivateKey { get; init; }
     public byte[] PublicKey { get; init; }
@@ -52,16 +56,27 @@ public class FaucetSystem : IFaucetSystem
         PrivateKey = keyPair.PrivateKey.ByteToHex().ToSecureString();
         PublicKey = keyPair.PublicKey;
     }
-
+    
     /// <summary>
     /// 
     /// </summary>
     /// <returns></returns>
-    public AsyncLazy<IUnitOfWork> UnitOfWork() => new(() =>
+    public IBlockchain Blockchain()
     {
-        _unitOfWork ??= GetUnitOfWork();
-        return Task.FromResult(_unitOfWork);
-    });
+        if (_blockchain != null) return _blockchain;
+        using var scope = ServiceScopeFactory.CreateAsyncScope();
+        _blockchain = scope.ServiceProvider.GetRequiredService<IBlockchain>();
+        return _blockchain;
+    }
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <returns></returns>
+    public IUnitOfWork UnitOfWork()
+    {
+        return _unitOfWork ??= GetUnitOfWork();
+    }
     
     /// <summary>
     /// 
@@ -71,9 +86,10 @@ public class FaucetSystem : IFaucetSystem
     {
         try
         {
+            if (_crypto != null) return _crypto;
             using var scope = ServiceScopeFactory.CreateAsyncScope();
-            var crypto = scope.ServiceProvider.GetRequiredService<ICrypto>();
-            return crypto;
+            _crypto = scope.ServiceProvider.GetRequiredService<ICrypto>();
+            return _crypto;
         }
         catch (Exception ex)
         {
@@ -103,11 +119,14 @@ public class FaucetSystem : IFaucetSystem
         return null;
     }
     
-    public AsyncLazy<IWalletSession> WalletSession() => new(() =>
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <returns></returns>
+    public IWalletSession WalletSession()
     {
-        _walletSession ??= GetWalletSession();
-        return Task.FromResult(_walletSession);
-    });
+        return _walletSession ??= GetWalletSession();
+    }
     
     /// <summary>
     /// 

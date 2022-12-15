@@ -1,3 +1,6 @@
+// CypherNetwork by Matthew Hellyer is licensed under CC BY-NC-ND 4.0.
+// To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-nd/4.0
+
 using System.Globalization;
 using System.Text;
 using Blake3;
@@ -19,10 +22,10 @@ public static class Validator
     /// <param name="calculateVrfSig"></param>
     /// <param name="kernel"></param>
     /// <returns></returns>
-    public static bool VerifyKernel(byte[] calculateVrfSig, byte[] kernel)
+    public static bool VerifyKernel(ReadOnlySpan<byte> calculateVrfSig, ReadOnlySpan<byte> kernel)
     {
         var v = new BigInteger(Hasher.Hash(calculateVrfSig).HexToByte());
-        var T = new BigInteger(kernel);
+        var T = new BigInteger(kernel.ToArray());
         return v.CompareTo(T) <= 0;
     }
     
@@ -33,9 +36,9 @@ public static class Validator
     /// <param name="hash"></param>
     /// <param name="lockTime"></param>
     /// <returns></returns>
-    public static byte[] Kernel(byte[] prevHash, byte[] hash, long lockTime)
+    public static byte[] Kernel(ReadOnlySpan<byte> prevHash, ReadOnlySpan<byte> hash, long lockTime)
     {
-        var txHashBig = new BigInteger(1, hash).Multiply(
+        var txHashBig = new BigInteger(1, hash.ToArray()).Multiply(
             new BigInteger(Hasher.Hash(prevHash).HexToByte()).Multiply(
                 new BigInteger(Hasher.Hash(lockTime.ToBytes()).HexToByte())));
         var kernel = Hasher.Hash(txHashBig.ToByteArray()).HexToByte();
@@ -49,14 +52,14 @@ public static class Validator
     /// <param name="kernel"></param>
     /// <param name="solution"></param>
     /// <returns></returns>
-    public static bool VerifySolution(byte[] vrfBytes, byte[] kernel, ulong solution)
+    public static bool VerifySolution(ReadOnlySpan<byte> vrfBytes, ReadOnlySpan<byte> kernel, ulong solution)
     {
         bool isSolution;
         try
         {
             var target = new BigInteger(1, Hasher.Hash(vrfBytes).HexToByte());
             var weight = BigInteger.ValueOf(Convert.ToInt64(solution));
-            var hashTarget = new BigInteger(1, kernel);
+            var hashTarget = new BigInteger(1, kernel.ToArray());
             var weightedTarget = target.Multiply(weight);
             isSolution = hashTarget.CompareTo(weightedTarget) <= 0;
         }
@@ -86,13 +89,13 @@ public static class Validator
     /// <param name="message"></param>
     /// <param name="nonce"></param>
     /// <returns></returns>
-    public static bool VerifySloth(uint t, byte[] message, byte[] nonce)
+    public static bool VerifySloth(uint t, ReadOnlySpan<byte> message, byte[] nonce)
     {
         try
         {
             var ct = new CancellationTokenSource(TimeSpan.FromSeconds(1)).Token;
             var sloth = new Sloth(0, ct);
-            var x = System.Numerics.BigInteger.Parse(message.ByteToHex(), NumberStyles.AllowHexSpecifier);
+            var x = System.Numerics.BigInteger.Parse(message.ToArray().ByteToHex(), NumberStyles.AllowHexSpecifier);
             var y = System.Numerics.BigInteger.Parse(nonce.FromBytes());
             if (x.Sign <= 0) x = -x;
             var verifySloth = sloth.Verify(t, x, y);
@@ -110,10 +113,9 @@ public static class Validator
     /// <param name="target"></param>
     /// <param name="script"></param>
     /// <returns></returns>
-    public static bool VerifyLockTime(LockTime target, byte[] script)
+    public static bool VerifyLockTime(LockTime target, ReadOnlySpan<byte> script)
     {
         Guard.Argument(target, nameof(target)).NotDefault();
-        Guard.Argument(script, nameof(script)).NotNull().NotEmpty().MaxCount(16);
         var scr = Encoding.UTF8.GetString(script);
         var sc1 = new Script(Op.GetPushOp(target.Value), OpcodeType.OP_CHECKLOCKTIMEVERIFY);
         var sc2 = new Script(scr);
@@ -126,4 +128,20 @@ public static class Validator
         spending.Inputs[0].Sequence = 1;
         return spending.Inputs.AsIndexedInputs().First().VerifyScript(tx.Outputs[0]);
     }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="prev"></param>
+    /// <param name="next"></param>
+    /// <returns></returns>
+    public static byte[] IncrementHash(ReadOnlySpan<byte> prev, ReadOnlySpan<byte> next)
+    {
+        var hasher = Hasher.New();
+        hasher.Update(prev);
+        hasher.Update(next);
+        var hash = hasher.Finalize();
+        return hash.AsSpanUnsafe().ToArray();
+    }
+
 }

@@ -8,7 +8,8 @@ namespace Faucet.Models;
 /// <summary>
 /// 
 /// </summary>
-/// <param name="TxId"></param>
+/// <param name="Hash"></param>
+/// <param name="Height"></param>
 /// <param name="Amount"></param>
 [MessagePackObject]
-public record Reward([property: Key(0)] byte[] TxId, [property:Key(1)] int Amount);
+public record Reward([property: Key(0)] byte[] Id, [property: Key(2)] byte[] Hash, [property: Key(3)] ulong Height, [property:Key(4)] ulong Amount);

@@ -116,7 +116,7 @@ public class Repository<T> : IRepository<T> where T : class, new()
                 if (value is { })
                 {
                     await using var stream = Utils.Manager.GetStream(value.AsSpan()) as RecyclableMemoryStream;
-                    var entry = MessagePackSerializer.Deserialize<T>(stream);
+                    var entry = await MessagePackSerializer.DeserializeAsync<T>(stream);
                     return entry;
                 }
             }

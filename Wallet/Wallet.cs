@@ -47,7 +47,7 @@ public interface IWallet
     /// <param name="address"></param>
     /// <param name="amount"></param>
     /// <returns></returns>
-    Task<byte[]?> Payout(string address, int amount);
+    Task<Transaction> Payout(string address, ulong amount);
 }
 
 /// <summary>
@@ -60,7 +60,7 @@ public class Wallet : IWallet
     private readonly DataService _dataService;
     private readonly IHostApplicationLifetime _applicationLifetime;
     private readonly Serilog.ILogger _logger;
-    
+
     /// <summary>
     /// 
     /// </summary>
@@ -83,62 +83,42 @@ public class Wallet : IWallet
     /// <param name="address"></param>
     /// <param name="amount"></param>
     /// <returns></returns>
-    public async Task<byte[]?> Payout(string address, int amount)
+    public async Task<Transaction> Payout(string address, ulong amount)
     {
-        // Will be removed when miner is connected.
-        if (amount == 0)
-        {
-            amount = _walletSession.GetNextAmount();
-        }
-
-        var walletTransaction = CreateTransaction((ulong)amount, 0, address);
-        if (walletTransaction.Transaction is null)
-        {
-            _logger.Here().Information("Payout failed {@Message}", walletTransaction.Message);
-            return null;
-        }
-
+        var walletTransaction = CreateTransaction(amount, 0, address);
+        if (walletTransaction.Transaction is null) return null;
         if (!await _dataService.SendTransaction(walletTransaction.Transaction))
         {
-            _logger.Here().Information("Payout failed {@Message}", "Could not send transaction");
+            _logger.Information("Payout failed {@Message}", "Could not send transaction");
             return null;
         }
-        
-        var blockCount = await _dataService.BlockCount();
-        const int tries = 3;
-        var hasTried = 0;
+
+        const int tries = 25;
+        var reTries = 1;
         var found = false;
-        
-        while (!found)
+        while (true)
         {
-            if (hasTried == tries) break;
-            var counter = await _dataService.BlockCount();
-            if (blockCount >= counter) continue;
+            if (reTries == tries) break;
+            // Wallet only has one transaction at any given time..
             if (await _dataService.ConfirmTransaction(walletTransaction.Transaction.TxnId))
             {
                 found = true;
+                break;
             }
-            else
-            {
-                hasTried++;
-                blockCount = await _dataService.BlockCount();
-            }
+
+            Thread.Sleep(20000);
+            reTries++;
         }
 
-        if (found)
+        if (!found) return null;
+        _walletSession.CacheTransactions.Clear();
+        var change = walletTransaction.Transaction.Vout[1];
+        var output = new Output
         {
-            _walletSession.CacheTransactions.Clear();
-            var change = walletTransaction.Transaction.Vout[1];
-            var output = new Output
-            {
-                C = change.C.ByteToHex(), E = change.E.ByteToHex(), N = change.N.ByteToHex(), T = (sbyte)change.T
-            };
-            _walletSession.CacheTransactions.Add(change.C, output);
-            return walletTransaction.Transaction.TxnId;
-        }
-
-        _logger.Here().Information("Payout failed {@Message}", "Could not find the transaction");
-        return null;
+            C = change.C.ByteToHex(), E = change.E.ByteToHex(), N = change.N.ByteToHex(), T = (sbyte)change.T
+        };
+        _walletSession.CacheTransactions.Add(change.C, output);
+        return walletTransaction.Transaction;
     }
 
     /// <summary>
@@ -162,7 +142,7 @@ public class Wallet : IWallet
             if (spendKey == null || scanKey == null)
                 return new WalletTransaction(null, "Unable to unlock node wallet");
             _logger.Information("Coinstake Amount: {@amount}", amount);
-            _walletSession.Amount = amount.MulWithNanoTan();
+            _walletSession.Amount = amount.MulCoin();
             _walletSession.Reward = reward;
             _walletSession.RecipientAddress = address;
             var (commitment, total) = GetSpending(_walletSession.Amount);
@@ -310,7 +290,6 @@ public class Wallet : IWallet
         {
             var (_, scan) = Unlock();
             var outputs = _walletSession.CacheTransactions.GetItems();
-                //.Where(x => !_walletSession.CacheConsumed.GetItems().Any(c => x.C.HexToByte().Xor(c.Commit))).ToArray();
             if (!outputs.Any()) return Enumerable.Empty<Balance>().ToArray();
             balances.AddRange(from vout in outputs.ToArray()
                 let coinType = (CoinType)vout.T

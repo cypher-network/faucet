@@ -13,7 +13,7 @@ public static class AsyncHelper
     /// <param name="func"></param>
     /// <typeparam name="TResult"></typeparam>
     /// <returns></returns>
-    public static TResult RunSync<TResult>(Func<Task<TResult>> func)
+    public static TResult RunSync<TResult>(Func<Task<TResult>?> func)
     {
         return MyTaskFactory
             .StartNew(func)

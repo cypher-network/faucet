@@ -4,6 +4,7 @@
 using Dawn;
 using Faucet.Extensions;
 using Faucet.Helpers;
+using Faucet.Ledger;
 using Faucet.Models;
 using Libsecp256k1Zkp.Net;
 using libsignal.ecc;
@@ -40,26 +41,29 @@ public class MinerHub : Hub
     /// <returns></returns>
     public async Task BlockProof(byte[] proof)
     {
-        Guard.Argument(proof, nameof(proof)).NotNull().NotEmpty();
+        Guard.Argument(proof, nameof(proof)).NotNull().NotEmpty().MaxCount(512);
         
         try
         {
             var msg = _faucetSystem.Crypto().BoxSealOpen(proof,
-                _faucetSystem.PrivateKey.ToUnSecureString().HexToByte(), _faucetSystem.PublicKey[1..33]);
+                _faucetSystem.PrivateKey.ToUnSecureString().HexToByte(), _faucetSystem.PublicKey[1..33]).ToArray();
+            
             if (msg.Length == 0) return;
             await using var stream = Utils.Manager.GetStream(msg);
             var blockMinerProof = await MessagePack.MessagePackSerializer.DeserializeAsync<BlockMinerProof>(stream);
             
-            // Just accept testnet addresses for now..
-            new BitcoinStealthAddress(blockMinerProof.Address, Network.TestNet);
+            // Throws an error if not main-net address
+            var bitcoinStealthAddress = new BitcoinStealthAddress(blockMinerProof.Address.FromBytes(), Network.Main);
 
             var blockMiners =
-                await (await _faucetSystem.UnitOfWork()).BlockMinerRepository.OrderByRangeAsync(x => x.Height, 0, 2);
+                await _faucetSystem.UnitOfWork().BlockMinerRepository.OrderByRangeAsync(x => x.Height, 0, 2);
             if (blockMiners[1].Height != blockMinerProof.Height) return;
-            var kernel = Validator.Kernel(blockMiners[0].Hash, blockMiners[1].Hash, blockMinerProof.Locktime);
+            if (!blockMiners[1].Hash.Xor(blockMinerProof.Hash)) return;
+            if (blockMinerProof.Solution >= LedgerConstant.SolutionThrottle) return;
+            var kernel = Validator.Kernel(blockMiners[0].Hash, blockMinerProof.Hash, blockMinerProof.Locktime);
             var verifyKernel = Validator.VerifyKernel(blockMinerProof.VrfSig, kernel);
             if (!verifyKernel) return;
-            var blockProof = await (await _faucetSystem.UnitOfWork()).BlockMinerProofRepository.GetAsync(x =>
+            var blockProof = await _faucetSystem.UnitOfWork().BlockMinerProofRepository.GetAsync(x =>
                 new ValueTask<bool>(x.Address.Xor(blockMinerProof.Address) && x.Height == blockMinerProof.Height));
             if (blockProof is not null) return;
             try
@@ -79,7 +83,7 @@ public class MinerHub : Hub
             if (!Validator.VerifyLockTime(new LockTime(Utils.UnixTimeToDateTime(blockMinerProof.Locktime)),
                     blockMinerProof.LocktimeScript)) return;
             var updateBlockMinerProof = blockMinerProof with { Hash = new Secp256k1().Randomize32() };
-            await (await _faucetSystem.UnitOfWork()).BlockMinerProofRepository.PutAsync(updateBlockMinerProof.Hash,
+            await _faucetSystem.UnitOfWork().BlockMinerProofRepository.PutAsync(updateBlockMinerProof.Hash,
                 updateBlockMinerProof);
         }
         catch (Exception ex)
@@ -97,5 +101,21 @@ public class MinerHub : Hub
         var pubKey = _faucetSystem.PublicKey[1..33];
         await Clients.Caller.SendAsync("PublicKey", pubKey);
         return pubKey;
+    }
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="pubKey"></param>
+    /// <returns></returns>
+    public async Task<byte[]> RewardUpdateRequest(byte[] pubKey)
+    {
+        Guard.Argument(pubKey, nameof(pubKey)).NotNull().NotEmpty().MaxCount(33);
+        var winners = await _faucetSystem.UnitOfWork().BlockMinerProofWinnerRepository
+            .WhereAsync(x => new ValueTask<bool>(x.PublicKey.Xor(pubKey)));
+        var amount = winners.Sum(x => x.Reward.DivCoin());
+        var msg = await Data.DataService.SerializeAsync(new Reward(null!, null!, 0, amount.ConvertToUInt64()));
+        var cypher = _faucetSystem.Crypto().BoxSeal(msg.First, pubKey[1..33]);
+        return cypher.ToArray();
     }
 }

@@ -7,11 +7,10 @@ using Faucet.Extensions;
 using Faucet.Helpers;
 using Faucet.Hubs;
 using Faucet.Models;
-using Faucet.Services;
-using Libsecp256k1Zkp.Net;
-using MessagePack;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.IO;
 using ILogger = Serilog.ILogger;
+using Utils = Faucet.Helpers.Utils;
 
 namespace Faucet.Ledger;
 
@@ -20,6 +19,7 @@ namespace Faucet.Ledger;
 /// </summary>
 public interface IBlockchain
 {
+    public decimal Supply { get; }
 }
 
 /// <summary>
@@ -29,29 +29,27 @@ public class Blockchain: IDisposable, IBlockchain
 {
     private readonly IFaucetSystem _faucetSystem;
     private readonly IHubContext<MinerHub> _hubContext;
-    private readonly IBackgroundWorkerQueue _backgroundWorkerQueue;
     private readonly ILogger _logger;
-    private readonly Random _random = new();
     private readonly CancellationTokenSource _cancellationToken = new();
-    
+
     private IDisposable _disposablePayBlockMiners;
     private IDisposable _disposableNewBlock;
     private IDisposable _disposableDecideWinners;
     private int _countDown = 11;
 
+    public decimal Supply { get; private set; }
+    
     /// <summary>
     /// 
     /// </summary>
     /// <param name="faucetSystem"></param>
     /// <param name="hubContext"></param>
-    /// <param name="backgroundWorkerQueue"></param>
     /// <param name="logger"></param>
-    public Blockchain(IFaucetSystem faucetSystem, IHubContext<MinerHub>  hubContext, IBackgroundWorkerQueue backgroundWorkerQueue, ILogger logger)
+    public Blockchain(IFaucetSystem faucetSystem, IHubContext<MinerHub>  hubContext, ILogger logger)
     {
         _faucetSystem = faucetSystem;
         _hubContext = hubContext;
-        _backgroundWorkerQueue = backgroundWorkerQueue;
-        _logger = logger; 
+        _logger = logger;
         Init();
     }
 
@@ -62,25 +60,38 @@ public class Blockchain: IDisposable, IBlockchain
     {
         try
         {
+            Supply = AsyncHelper.RunSync(async delegate
+            {
+                var supply = LedgerConstant.Distribution;
+                var winners = await _faucetSystem.UnitOfWork().BlockMinerProofWinnerRepository.WhereAsync(x =>
+                    new ValueTask<bool>(x.Reward != 0));
+                if (winners is { })
+                {
+                    supply -= winners.Sum(x => x.Reward.DivCoin());
+                }
+
+                return supply;
+            });
+            
             var countBlockMiners = AsyncHelper.RunSync(async delegate
             {
-                var unitOfWork = await _faucetSystem.UnitOfWork();
-                var count = await unitOfWork.BlockMinerRepository.CountAsync();
+                var count = await _faucetSystem.UnitOfWork().BlockMinerRepository.CountAsync();
                 return count;
             });
             if (countBlockMiners != 0) return;
+            using var secp256K1 = new Libsecp256k1Zkp.Net.Secp256k1();
             var prevHash = Hasher.Hash("This is the beginning of cypherpunks write code faucet".ToBytes()).HexToByte();
-            var hash = Hasher.Hash(Utils.Combine(prevHash, 0.ToBytes())).HexToByte();
+            var hash = Hasher.Hash(Utils.Combine(prevHash, 0.ToBytes(), secp256K1.Randomize32())).HexToByte();
             var blockMiner = new BlockMiner
             {
                 Hash = hash,
                 PrevHash = prevHash,
                 Height = 0
             };
-
+            
             AsyncHelper.RunSync(async delegate
             {
-                await (await _faucetSystem.UnitOfWork()).BlockMinerRepository.PutAsync(blockMiner.Hash, blockMiner);
+                await _faucetSystem.UnitOfWork().BlockMinerRepository.PutAsync(blockMiner.Hash, blockMiner);
             });
         }
         catch (Exception ex)
@@ -90,7 +101,8 @@ public class Blockchain: IDisposable, IBlockchain
         finally
         {
             Task.WaitAll(NextBlock(), DecideWinners());
-            PayBlockMinersInterval(); 
+            CalculateBlockMinersRewardInterval();
+            PayoutInterval();
         }
     }
 
@@ -98,12 +110,24 @@ public class Blockchain: IDisposable, IBlockchain
     /// 
     /// </summary>
     /// <returns></returns>
-    private void PayBlockMinersInterval()
+    private void CalculateBlockMinersRewardInterval()
     {
-        _disposablePayBlockMiners = Observable.Interval(TimeSpan.FromSeconds(10)).Subscribe(_ =>
+        _disposablePayBlockMiners = Observable.Interval(TimeSpan.FromSeconds(60)).Subscribe(_ =>
         {
             if (_cancellationToken.IsCancellationRequested) return;
-            AsyncHelper.RunSync(async delegate { await Payout(); });
+            Reward().Wait();
+        });
+    }
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    private void PayoutInterval()
+    {
+        _disposablePayBlockMiners = Observable.Interval(TimeSpan.FromDays(7)).Subscribe(_ =>
+        {
+            if (_cancellationToken.IsCancellationRequested) return;
+            Payout().Wait();
         });
     }
 
@@ -114,20 +138,50 @@ public class Blockchain: IDisposable, IBlockchain
     {
         try
         {
-            var blockMinerProofWinners = await (await _faucetSystem.UnitOfWork()).BlockMinerProofWinnerRepository
-                .WhereAsync(x => new ValueTask<bool>(x.TxId is null));
-            if (!blockMinerProofWinners.Any()) return;
-            foreach (var winner in blockMinerProofWinners)
+            var start = Utils.UnixTimeToDateTime(Utils.GetAdjustedTimeAsUnixTimestamp()).AddDays(-7).ToUnixTimeSeconds();
+            var blockMinerProofWinner = (await _faucetSystem.UnitOfWork().BlockMinerProofWinnerRepository.WhereAsync(x =>
+                new ValueTask<bool>(x.Timestamp >= start & !x.Paid))).GroupBy(g => g.PublicKey).First();
+            var amount = blockMinerProofWinner.Sum(x => x.Reward.DivCoin());
+            var address = blockMinerProofWinner.First().Address;
+            var transaction = await _faucetSystem.Wallet().Payout(address.FromBytes(), amount.ConvertToUInt64());
+            if (transaction is { })
             {
-                var amount = (int)Math.Round(Convert.ToDecimal(int.MaxValue) / winner.Reward, MidpointRounding.ToEven);
-                var txId = await _faucetSystem.Wallet().Payout(winner.Address.FromBytes(), amount);
-                if (txId is null) continue;
-                var reward = MessagePackSerializer.Serialize(new Reward(txId, amount));
-                var cipher = _faucetSystem.Crypto().BoxSeal(reward, winner.PublicKey[1..33]);
-                await _hubContext.Clients.All.SendAsync("Reward", cipher);
-                var updateWinner = winner with { Reward = amount, TxId = txId };
-                await (await _faucetSystem.UnitOfWork()).BlockMinerProofWinnerRepository.PutAsync(updateWinner.Hash,
+                foreach (var winner in blockMinerProofWinner)
+                {
+                    var win = winner with
+                    {
+                        Paid = true, PayoutTimestamp = Utils.GetAdjustedTimeAsUnixTimestamp(), TxId = transaction.TxnId
+                    };
+                    await _faucetSystem.UnitOfWork().BlockMinerProofWinnerRepository.PutAsync(winner.Id, win);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Here().Error(ex.Message);
+        }
+    }
+    
+    /// <summary>
+    ///     
+    /// </summary>
+    private async Task Reward()
+    {
+        try
+        {
+            var blockMiner = await _faucetSystem.UnitOfWork().BlockMinerProofWinnerRepository.GetAsync(x =>
+                new ValueTask<bool>(x.Reward == 0));
+            if (blockMiner is null) return;
+            var amount = LedgerConstant.Reward;
+            var reward = await Data.DataService.SerializeAsync(new Reward(null!, blockMiner.Hash, blockMiner.Height, amount.ConvertToUInt64()));
+            var cipher = _faucetSystem.Crypto().BoxSeal(reward.First, blockMiner.PublicKey.AsMemory()[1..33]);
+            await _hubContext.Clients.All.SendAsync("Reward", cipher.ToArray());
+            var updateWinner = blockMiner with { Reward = amount.ConvertToUInt64()};
+            if (_faucetSystem.UnitOfWork().BlockMinerProofWinnerRepository.Delete(updateWinner.Id))
+            {
+                await _faucetSystem.UnitOfWork().BlockMinerProofWinnerRepository.PutAsync(updateWinner.Id,
                     updateWinner);
+                Supply -= amount;
             }
         }
         catch (Exception ex)
@@ -147,29 +201,34 @@ public class Blockchain: IDisposable, IBlockchain
             {
                 if (_countDown != 0) return;
                 var blockMiners = AsyncHelper.RunSync(async () =>
-                    await (await _faucetSystem.UnitOfWork()).BlockMinerRepository.OrderByRangeAsync( x => x.Height,  0, 2));
+                    await _faucetSystem.UnitOfWork().BlockMinerRepository.OrderByRangeAsync( x => x.Height,  0, 2));
                 var storedBlockMiner = blockMiners.Last();
                 var height = storedBlockMiner.Height + 1;
-                var hash = Hasher.Hash(Utils.Combine(storedBlockMiner.Hash, height.ToBytes())).HexToByte();
+                using var secp256K1 = new Libsecp256k1Zkp.Net.Secp256k1();
+                using var stream = Utils.Manager.GetStream() as RecyclableMemoryStream;
+                stream.Write(storedBlockMiner.PrevHash);
+                stream.Write(height.ToBytes());
+                stream.Write(secp256K1.Randomize32());
+                var hash = Validator.IncrementHash(storedBlockMiner.PrevHash, stream.GetSpan());
                 var blockMiner = new BlockMiner { Hash = hash, PrevHash = storedBlockMiner.Hash, Height = height };
                 if (blockMiners.Count == 1)
                 {
                     AsyncHelper.RunSync(async () =>
-                        (await _faucetSystem.UnitOfWork()).BlockMinerRepository.PutAsync(blockMiner.Hash, blockMiner));
+                        await _faucetSystem.UnitOfWork().BlockMinerRepository.PutAsync(blockMiner.Hash, blockMiner));
                 }
                 else
                 {
                     foreach (var miner in blockMiners)
                     {
                         AsyncHelper.RunSync(async () =>
-                            (await _faucetSystem.UnitOfWork()).BlockMinerRepository.Delete(miner.Hash));
+                            _faucetSystem.UnitOfWork().BlockMinerRepository.Delete(miner.Hash));
                     }
 
                     AsyncHelper.RunSync(async () =>
                     {
-                        await (await _faucetSystem.UnitOfWork()).BlockMinerRepository.PutAsync(storedBlockMiner.Hash,
+                        await _faucetSystem.UnitOfWork().BlockMinerRepository.PutAsync(storedBlockMiner.Hash,
                             storedBlockMiner);
-                        await (await _faucetSystem.UnitOfWork()).BlockMinerRepository.PutAsync(blockMiner.Hash,
+                        await _faucetSystem.UnitOfWork().BlockMinerRepository.PutAsync(blockMiner.Hash,
                             blockMiner);
                     });
                 }
@@ -184,7 +243,10 @@ public class Blockchain: IDisposable, IBlockchain
             }
             finally
             {
-                if (_countDown < 0) _countDown = 11;
+                if (_countDown < 0)
+                {   
+                    _countDown = 11;
+                }
                 _countDown--;
                 _hubContext.Clients.All.SendAsync("CountDown", _countDown).GetAwaiter();
             }
@@ -197,14 +259,15 @@ public class Blockchain: IDisposable, IBlockchain
     /// </summary>
     private Task DecideWinners()
     {
-        _disposableDecideWinners = Observable.Interval(TimeSpan.FromSeconds(10)).Subscribe(_ =>
+        _disposableDecideWinners = Observable.Interval(TimeSpan.FromSeconds(45)).Subscribe(_ =>
         {
             try
             {
                 AsyncHelper.RunSync(async () =>
                 {
-                    var blockMinerProofs = await (await _faucetSystem.UnitOfWork()).BlockMinerProofRepository
+                    var blockMinerProofs = await _faucetSystem.UnitOfWork().BlockMinerProofRepository
                         .IterateAsync().ToArrayAsync();
+                    if (blockMinerProofs.Length == 0) return;
                     foreach (var proofGroup in blockMinerProofs.GroupBy(x => x.Height))
                     {
                         var minerProofsSolutions = proofGroup
@@ -212,18 +275,23 @@ public class Blockchain: IDisposable, IBlockchain
                         var blockMinerWinners = minerProofsSolutions.Select(x =>
                             new BlockMinerProofWinner
                             {
-                                Hash = new Secp256k1().Randomize32(),
+                                Hash = x.Hash,
+                                Height = x.Height,
                                 PublicKey = x.PublicKey,
                                 Address = x.Address,
-                                Reward = _random.Next(1, int.MaxValue)
+                                Solution = x.Solution
                             }).ToArray();
-                        var winners = blockMinerWinners.Where(x => x.Reward == blockMinerWinners.Max(m => m.Reward))
+                        var winners = blockMinerWinners.Where(x => x.Solution == blockMinerWinners.Max(m => m.Solution))
                             .ToArray();
-                        foreach (var winner in winners)
-                            await (await _faucetSystem.UnitOfWork()).BlockMinerProofWinnerRepository.PutAsync(
-                                winner.Hash, winner);
+                        var winner = winners.Length switch
+                        {
+                            > 2 => winners.FirstOrDefault(winner =>
+                                winner.Solution >= blockMinerWinners.Select(x => x.Solution).Max()),
+                            _ => winners[0]
+                        };
+                        await _faucetSystem.UnitOfWork().BlockMinerProofWinnerRepository.PutAsync(winner.Id, winner);
                         foreach (var blockMinerProof in proofGroup)
-                            (await _faucetSystem.UnitOfWork()).BlockMinerProofRepository.Delete(blockMinerProof.Hash);
+                            _faucetSystem.UnitOfWork().BlockMinerProofRepository.Delete(blockMinerProof.Hash);
                     }
                 });
             }
@@ -234,7 +302,7 @@ public class Blockchain: IDisposable, IBlockchain
         });
         return Task.CompletedTask;
     }
-
+    
     /// <summary>
     /// 
     /// </summary>

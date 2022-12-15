@@ -3,6 +3,7 @@ using System.Security;
 using System.Text;
 using System.Numerics;
 using System.Reflection;
+using Faucet.Ledger;
 using Microsoft.IO;
 
 namespace Faucet.Helpers;
@@ -117,11 +118,32 @@ public static class Utils
     /// </summary>
     /// <param name="value"></param>
     /// <returns></returns>
-    public static ulong MulWithNanoTan(this ulong value)
+    public static ulong MulCoin(this ulong value)
     {
-        return value * 1000_000_000;
+        return value * LedgerConstant.Coin;
     }
 
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="value"></param>
+    /// <returns></returns>
+    public static decimal DivCoin(this ulong value)
+    {
+        return Convert.ToDecimal(value) / LedgerConstant.Coin;
+    }
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="value"></param>
+    /// <returns></returns>
+    public static ulong ConvertToUInt64(this decimal value)
+    {
+        var amount = (ulong)(value * LedgerConstant.Coin);
+        return amount;
+    }
+    
     /// <summary>
     /// 
     /// </summary>

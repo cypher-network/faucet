@@ -9,7 +9,6 @@ using Faucet.Persistence;
 using libsignal.ecc;
 using Microsoft.AspNetCore.DataProtection;
 using Newtonsoft.Json;
-using NitraLibSodium.Box;
 using ILogger = Serilog.ILogger;
 
 namespace Faucet.Cryptography;
@@ -49,7 +48,8 @@ public interface ICrypto
     /// <param name="secretKey"></param>
     /// <param name="publicKey"></param>
     /// <returns></returns>
-    byte[] BoxSealOpen(byte[] cipher, byte[] secretKey, byte[] publicKey);
+    ReadOnlyMemory<byte> BoxSealOpen(ReadOnlySpan<byte> cipher, ReadOnlySpan<byte> secretKey,
+        ReadOnlySpan<byte> publicKey);
 
     /// <summary>
     /// 
@@ -57,7 +57,7 @@ public interface ICrypto
     /// <param name="msg"></param>
     /// <param name="publicKey"></param>
     /// <returns></returns>
-    byte[] BoxSeal(byte[] msg, byte[] publicKey);
+    ReadOnlyMemory<byte> BoxSeal(ReadOnlyMemory<byte> msg, ReadOnlyMemory<byte> publicKey);
 }
 
 /// <summary>
@@ -158,12 +158,18 @@ public class Crypto : ICrypto
     /// <param name="secretKey"></param>
     /// <param name="publicKey"></param>
     /// <returns></returns>
-    public byte[] BoxSealOpen(byte[] cipher, byte[] secretKey, byte[] publicKey)
+    public unsafe ReadOnlyMemory<byte> BoxSealOpen(ReadOnlySpan<byte> cipher, ReadOnlySpan<byte> secretKey, ReadOnlySpan<byte> publicKey)
     {
-        var msg = new byte[cipher.Length];
-        return Box.SealOpen(msg, cipher, (ulong)cipher.Length, publicKey, secretKey) != 0
-            ? Array.Empty<byte>()
-            : msg;
+        var len = cipher.Length;
+        var msg = stackalloc byte[len];
+        int result;
+        fixed (byte* cPtr = cipher, pkPtr = publicKey, skPtr = secretKey)
+        {
+            result = Box.SealOpen(msg, cPtr, (ulong)cipher.Length, pkPtr, skPtr);
+        }
+        
+        var destination = new Span<byte>(msg, len);
+        return result != 0 ? ReadOnlyMemory<byte>.Empty : destination[..len].ToArray();
     }
 
     /// <summary>
@@ -172,14 +178,22 @@ public class Crypto : ICrypto
     /// <param name="msg"></param>
     /// <param name="publicKey"></param>
     /// <returns></returns>
-    public byte[] BoxSeal(byte[] msg, byte[] publicKey)
+    public ReadOnlyMemory<byte> BoxSeal(ReadOnlyMemory<byte> msg, ReadOnlyMemory<byte> publicKey)
     {
         var cipher = new byte[msg.Length + (int)Box.Sealbytes()];
-        return Box.Seal(cipher, msg, (ulong)msg.Length, publicKey) != 0
-            ? Array.Empty<byte>()
-            : cipher;
+        var result = 0;
+        
+        unsafe
+        {
+            fixed (byte* mPtr = msg.Span, cPtr = cipher, pkPtr = publicKey.Span)
+            {
+                result = Box.Seal(cPtr, mPtr, (ulong)msg.Span.Length, pkPtr);
+            }
+        }
+        
+        return result != 0 ? Memory<byte>.Empty : cipher.AsMemory();
     }
-    
+
     /// <summary>
     /// 
     /// </summary>

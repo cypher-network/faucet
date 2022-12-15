@@ -16,6 +16,7 @@ public interface IUnitOfWork
     IBlockMinerRepository BlockMinerRepository { get; }
     IBlockMinerProofRepository BlockMinerProofRepository { get; }
     IBlockMinerProofWinnerRepository BlockMinerProofWinnerRepository { get; }
+    ITransactionRepository TransactionRepository { get; }
     void Dispose();
 }
 
@@ -35,6 +36,7 @@ public class UnitOfWork : IUnitOfWork, IDisposable
         BlockMinerRepository = new BlockMinerRepository(StoreDb, log);
         BlockMinerProofRepository = new BlockMinerProofRepository(StoreDb, log);
         BlockMinerProofWinnerRepository = new BlockMinerProofWinnerRepository(StoreDb, log);
+        TransactionRepository = new TransactionRepository(StoreDb, log);
     }
 
     public IStoreDb StoreDb { get; }
@@ -44,6 +46,7 @@ public class UnitOfWork : IUnitOfWork, IDisposable
     public IBlockMinerRepository BlockMinerRepository { get; }
     public IBlockMinerProofRepository BlockMinerProofRepository { get; }
     public IBlockMinerProofWinnerRepository BlockMinerProofWinnerRepository { get; }
+    public ITransactionRepository TransactionRepository { get; }
 
     /// <summary>
     /// </summary>
