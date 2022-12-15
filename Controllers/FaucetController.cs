@@ -1,6 +1,7 @@
 using Dawn;
 using Faucet.Extensions;
 using Faucet.Helpers;
+using Faucet.Ledger;
 using Faucet.Models;
 using Microsoft.AspNetCore.Mvc;
 using ILogger = Serilog.ILogger;
@@ -147,6 +148,29 @@ public class FaucetController : Controller
         catch (Exception ex)
         {
             _logger.Here().Error(ex, "Unable to get winner");
+        }
+
+        return NotFound();
+    }
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <returns></returns>
+    [HttpGet("winners/count", Name = "GetWinnersCountAsync")]
+    [ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetWinnersCountAsync()
+    {
+        try
+        {
+            var count =
+                await _faucetSystem.UnitOfWork().BlockMinerProofWinnerRepository.CountAsync();
+            return new ObjectResult(new { count });
+        }
+        catch (Exception ex)
+        {
+            _logger.Here().Error(ex, "Unable to get winners count");
         }
 
         return NotFound();
