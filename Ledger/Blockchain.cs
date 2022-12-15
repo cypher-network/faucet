@@ -148,6 +148,7 @@ public class Blockchain: IDisposable, IBlockchain
             {
                 foreach (var winner in blockMinerProofWinner)
                 {
+                    if (!_faucetSystem.UnitOfWork().BlockMinerProofWinnerRepository.Delete(winner.Id)) continue;
                     var win = winner with
                     {
                         Paid = true, PayoutTimestamp = Utils.GetAdjustedTimeAsUnixTimestamp(), TxId = transaction.TxnId
