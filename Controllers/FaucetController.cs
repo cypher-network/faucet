@@ -98,7 +98,7 @@ public class FaucetController : Controller
     [HttpGet("winners/{skip}/{take}", Name = "GetWinners")]
     [ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetBlocksAsync(int skip, int take)
+    public async Task<IActionResult> GetWinners(int skip, int take)
     {
         Guard.Argument(skip, nameof(skip)).NotNegative();
         Guard.Argument(take, nameof(take)).NotNegative();
@@ -127,7 +127,7 @@ public class FaucetController : Controller
     [HttpGet("winner/{pubkey}", Name = "GetWinner")]
     [ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetTransactionAsync(string pubkey)
+    public async Task<IActionResult> GetWinnerAsync(string pubkey)
     {
         Guard.Argument(pubkey, nameof(pubkey)).NotNull().NotEmpty().NotWhiteSpace().MaxLength(66);
         try
@@ -146,7 +146,7 @@ public class FaucetController : Controller
         }
         catch (Exception ex)
         {
-            _logger.Here().Error(ex, "Unable to get the transaction");
+            _logger.Here().Error(ex, "Unable to get winner");
         }
 
         return NotFound();
