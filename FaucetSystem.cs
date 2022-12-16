@@ -25,6 +25,7 @@ public interface IFaucetSystem
     IWallet Wallet();
     IWalletSession WalletSession();
     IBlockchain Blockchain();
+    int UserOnlineCount { get; set; }
 }
 
 /// <summary>
@@ -68,7 +69,12 @@ public class FaucetSystem : IFaucetSystem
         _blockchain = scope.ServiceProvider.GetRequiredService<IBlockchain>();
         return _blockchain;
     }
-    
+
+    /// <summary>
+    /// 
+    /// </summary>
+    public int UserOnlineCount { get; set; }
+
     /// <summary>
     /// 
     /// </summary>

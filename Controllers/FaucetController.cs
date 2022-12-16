@@ -30,10 +30,10 @@ public class FaucetController : Controller
     /// 
     /// </summary>
     /// <returns></returns>
-    [HttpGet("supply", Name = "GetSupply")]
+    [HttpGet("supply", Name = "GetSupplyAsync")]
     [ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetSupply()
+    public async Task<IActionResult> GetSupplyAsync()
     {
         try
         {
@@ -51,10 +51,10 @@ public class FaucetController : Controller
     /// 
     /// </summary>
     /// <returns></returns>
-    [HttpGet("emission", Name = "GetEmission")]
+    [HttpGet("emission", Name = "GetEmissionAsync")]
     [ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetEmission()
+    public async Task<IActionResult> GetEmissionAsync()
     {
         try
         {
@@ -72,7 +72,7 @@ public class FaucetController : Controller
     /// <summary>
     /// </summary>
     /// <returns></returns>
-    [HttpGet("height", Name = "GetBlockHeight")]
+    [HttpGet("height", Name = "GetBlockHeightAsync")]
     [ProducesResponseType(typeof(long), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetBlockHeightAsync()
@@ -96,10 +96,10 @@ public class FaucetController : Controller
     /// <param name="skip"></param>
     /// <param name="take"></param>
     /// <returns></returns>
-    [HttpGet("winners/{skip}/{take}", Name = "GetWinners")]
+    [HttpGet("winners/{skip}/{take}", Name = "GetWinnersAsync")]
     [ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetWinners(int skip, int take)
+    public async Task<IActionResult> GetWinnersAsync(int skip, int take)
     {
         Guard.Argument(skip, nameof(skip)).NotNegative();
         Guard.Argument(take, nameof(take)).NotNegative();
@@ -125,7 +125,7 @@ public class FaucetController : Controller
     /// </summary>
     /// <param name="pubkey"></param>
     /// <returns></returns>
-    [HttpGet("winner/{pubkey}", Name = "GetWinner")]
+    [HttpGet("winner/{pubkey}", Name = "GetWinnerAsync")]
     [ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetWinnerAsync(string pubkey)
@@ -171,6 +171,26 @@ public class FaucetController : Controller
         catch (Exception ex)
         {
             _logger.Here().Error(ex, "Unable to get winners count");
+        }
+
+        return NotFound();
+    }
+    
+    /// <summary>
+    /// </summary>
+    /// <returns></returns>
+    [HttpGet("usersonline", Name = "GetUserOnlineCountAsync")]
+    [ProducesResponseType(typeof(long), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetUserOnlineCountAsync()
+    {
+        try
+        {
+            return new ObjectResult(new { onlineUsers = _faucetSystem.UserOnlineCount });
+        }
+        catch (Exception ex)
+        {
+            _logger.Here().Error(ex, "Unable to get the block height");
         }
 
         return NotFound();

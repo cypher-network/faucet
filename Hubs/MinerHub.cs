@@ -39,6 +39,27 @@ public class MinerHub : Hub
     /// 
     /// </summary>
     /// <returns></returns>
+    public override Task OnConnectedAsync()
+    {
+        _faucetSystem.UserOnlineCount++;
+        return base.OnConnectedAsync();
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="exception"></param>
+    /// <returns></returns>
+    public override Task OnDisconnectedAsync(Exception? exception)
+    {
+        _faucetSystem.UserOnlineCount--;
+        return base.OnDisconnectedAsync(exception);
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <returns></returns>
     public async Task BlockProof(byte[] proof)
     {
         Guard.Argument(proof, nameof(proof)).NotNull().NotEmpty().MaxCount(512);
